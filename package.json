@@ -1,6 +1,6 @@
 {
   "name": "eas",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Equipment Accountability System for crew equipment checkout and return.",
   "scripts": {
@@ -13,9 +13,11 @@
     "deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy"
   },
   "dependencies": {
-    "jose": "^6.1.0"
+    "jose": "^6.1.0",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
+    "@types/qrcode": "^1.5.5",
     "typescript": "^5.8.3",
     "wrangler": "^4.45.0"
   }
