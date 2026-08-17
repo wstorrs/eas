@@ -1,58 +1,14 @@
-const $ = (id) => document.getElementById(id);
-
-async function api(path, options = {}) {
-  const response = await fetch(path, { ...options, headers: { "content-type": "application/json", ...(options.headers || {}) } });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
-  return data;
-}
-
-function fmt(value) {
-  if (!value) return "-";
-  return new Date(value).toLocaleString();
-}
-
-async function loadDashboard() {
-  try {
-    const data = await api("/api/admin/dashboard");
-    $("adminIdentity").textContent = data.adminEmail ? `Signed in as ${data.adminEmail}` : "Protected by Cloudflare Access";
-    $("employeeCount").textContent = data.counts.employees;
-    $("assetCount").textContent = data.counts.assets;
-    $("signedOutCount").textContent = data.counts.signedOut;
-    $("exceptionCount").textContent = data.counts.exceptions;
-
-    $("vehicleId").innerHTML = '<option value="">Unassigned</option>' + data.vehicles.map(v => `<option value="${v.id}">${v.unit_number}</option>`).join("");
-    $("currentRows").innerHTML = data.current.length ? data.current.map(r => `<tr><td>${r.asset_code} - ${r.display_name}</td><td>${r.unit_number || "-"}</td><td>${r.employee_name || "-"} (${r.employee_code || "-"})</td><td>${fmt(r.signed_out_at)}</td></tr>`).join("") : '<tr><td colspan="4" class="muted">Nothing is currently signed out.</td></tr>';
-    $("transactionRows").innerHTML = data.transactions.length ? data.transactions.map(r => `<tr><td>${fmt(r.occurred_at)}</td><td>${r.action}</td><td>${r.asset_code}</td><td>${r.unit_number || "-"}</td><td>${r.employee_name} (${r.employee_code})</td></tr>`).join("") : '<tr><td colspan="5" class="muted">No transactions yet.</td></tr>';
-  } catch (err) {
-    $("adminIdentity").textContent = err.message;
-    $("adminIdentity").classList.add("danger");
-  }
-}
-
-$("employeeForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  try {
-    await api("/api/admin/employees", { method: "POST", body: JSON.stringify({ employeeCode: $("employeeCode").value, firstName: $("firstName").value, lastName: $("lastName").value }) });
-    event.target.reset(); $("employeeMessage").textContent = "Employee added."; await loadDashboard();
-  } catch (err) { $("employeeMessage").textContent = err.message; }
-});
-
-$("vehicleForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  try {
-    await api("/api/admin/vehicles", { method: "POST", body: JSON.stringify({ unitNumber: $("unitNumber").value, description: $("vehicleDescription").value }) });
-    event.target.reset(); $("vehicleMessage").textContent = "Vehicle added."; await loadDashboard();
-  } catch (err) { $("vehicleMessage").textContent = err.message; }
-});
-
-$("equipmentForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  try {
-    const assetCode = $("assetCode").value.trim().toUpperCase();
-    await api("/api/admin/equipment", { method: "POST", body: JSON.stringify({ assetCode, assetType: $("assetType").value, displayName: $("displayName").value, vehicleId: $("vehicleId").value || null }) });
-    event.target.reset(); $("equipmentMessage").textContent = `Equipment added. QR payload: EAS:${assetCode}`; await loadDashboard();
-  } catch (err) { $("equipmentMessage").textContent = err.message; }
-});
-
+const $=id=>document.getElementById(id);let importRows=[];
+async function api(path,options={}){const response=await fetch(path,{...options,headers:{"content-type":"application/json",...(options.headers||{})}});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||`Request failed (${response.status})`);return data}
+const esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function fmt(value){return value?new Date(value).toLocaleString():"-"}
+function openSection(id){document.querySelectorAll("main > .panel.section").forEach(el=>el.classList.add("hidden"));$(id)?.classList.remove("hidden");$(id)?.scrollIntoView({behavior:"smooth",block:"start"})}
+document.querySelectorAll("[data-open]").forEach(b=>b.addEventListener("click",()=>openSection(b.dataset.open)));document.querySelectorAll("[data-close]").forEach(b=>b.addEventListener("click",()=>b.closest("section").classList.add("hidden")));
+async function loadDashboard(){try{const d=await api("/api/admin/dashboard");$("adminIdentity").textContent=`Signed in as ${d.adminEmail}`;$("employeeCount").textContent=d.counts.employees;$("assetCount").textContent=d.counts.assets;$("signedOutCount").textContent=d.counts.signedOut;$("exceptionCount").textContent=d.counts.exceptions;$("vehicleId").innerHTML='<option value="">Unassigned</option>'+d.vehicles.map(v=>`<option value="${v.id}">${esc(v.unit_number)}</option>`).join("");$("currentRows").innerHTML=d.current.length?d.current.map(r=>`<tr><td>${esc(r.asset_code)} - ${esc(r.display_name)}</td><td>${esc(r.unit_number||"-")}</td><td>${esc(r.employee_name||"-")} (${esc(r.employee_code||"-")})</td><td>${fmt(r.signed_out_at)}</td></tr>`).join(""):'<tr><td colspan="4" class="muted">Nothing is currently signed out.</td></tr>';$("transactionRows").innerHTML=d.transactions.length?d.transactions.map(r=>`<tr><td>${fmt(r.occurred_at)}</td><td>${esc(r.action)}</td><td>${esc(r.asset_code)}</td><td>${esc(r.unit_number||"-")}</td><td>${esc(r.employee_name)} (${esc(r.employee_code)})</td></tr>`).join(""):'<tr><td colspan="5" class="muted">No transactions yet.</td></tr>'}catch(err){$("adminIdentity").textContent=err.message;$("adminIdentity").classList.add("danger")}}
+$("employeeForm").addEventListener("submit",async e=>{e.preventDefault();try{const d=await api("/api/admin/employees",{method:"POST",body:JSON.stringify({employeeCode:$("employeeCode").value,firstName:$("firstName").value,lastName:$("lastName").value})});e.target.reset();$("employeeMessage").textContent=`Employee ${d.employeeCode} added.`;await loadDashboard()}catch(err){$("employeeMessage").textContent=err.message}});
+$("vehicleForm").addEventListener("submit",async e=>{e.preventDefault();try{await api("/api/admin/vehicles",{method:"POST",body:JSON.stringify({unitNumber:$("unitNumber").value,description:$("vehicleDescription").value})});e.target.reset();$("vehicleMessage").textContent="Vehicle added.";await loadDashboard()}catch(err){$("vehicleMessage").textContent=err.message}});
+$("equipmentForm").addEventListener("submit",async e=>{e.preventDefault();try{const assetCode=$("assetCode").value.trim().toUpperCase();await api("/api/admin/equipment",{method:"POST",body:JSON.stringify({assetCode,assetType:$("assetType").value,displayName:$("displayName").value,vehicleId:$("vehicleId").value||null})});e.target.reset();$("equipmentMessage").textContent=`Equipment added. QR payload: EAS:${assetCode}`;await loadDashboard()}catch(err){$("equipmentMessage").textContent=err.message}});
+function parseCSV(text){const lines=text.replace(/^\uFEFF/,"").split(/\r?\n/).filter(l=>l.trim());if(lines.length<2)return[];const parse=line=>{const out=[];let value="",quoted=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(quoted&&line[i+1]==='"'){value+='"';i++}else quoted=!quoted}else if(c===','&&!quoted){out.push(value.trim());value=""}else value+=c}out.push(value.trim());return out};const headers=parse(lines[0]).map(h=>h.toLowerCase().replace(/[^a-z0-9]/g,""));const id=headers.findIndex(h=>["employeeid","employeecode","id"].includes(h)),first=headers.findIndex(h=>["firstname","first"].includes(h)),last=headers.findIndex(h=>["lastname","last"].includes(h));if(id<0||first<0||last<0)throw new Error("CSV needs Employee ID, First Name, and Last Name columns.");return lines.slice(1).map(line=>{const c=parse(line);return{employeeCode:c[id]||"",firstName:c[first]||"",lastName:c[last]||""}})}
+$("previewImport").addEventListener("click",async()=>{try{const file=$("employeeFile").files[0];if(!file)throw new Error("Choose the cleaned CSV file first.");importRows=parseCSV(await file.text());const d=await api("/api/admin/employees/preview",{method:"POST",body:JSON.stringify({employees:importRows})});$("importSummary").innerHTML=["new","exists","conflict","invalid"].map(k=>`<span class="pill">${k.toUpperCase()}: ${d.counts[k]||0}</span>`).join("");$("importPreview").innerHTML=`<table><thead><tr><th>ID</th><th>Name</th><th>Status</th><th>Existing record</th></tr></thead><tbody>${d.preview.map(r=>`<tr><td>${esc(r.employeeCode||"")}</td><td>${esc(`${r.firstName||""} ${r.lastName||""}`)}</td><td>${esc(r.status)}</td><td>${esc(r.existingName||r.reason||"")}</td></tr>`).join("")}</tbody></table>`;$("confirmImport").classList.toggle("hidden",!(d.counts.new>0));$("importMessage").textContent=(d.counts.conflict||0)>0?"Conflicts will NOT be overwritten. Only NEW employee IDs will be imported.":"Review the preview, then import the new employees."}catch(err){$("importMessage").textContent=err.message}});
+$("confirmImport").addEventListener("click",async()=>{if(!confirm("Import NEW employees now? Existing employee IDs and conflicts will be skipped."))return;try{const d=await api("/api/admin/employees/import",{method:"POST",body:JSON.stringify({employees:importRows})});$("importMessage").textContent=`Import complete: ${d.inserted} added, ${d.skipped} skipped.`;$("confirmImport").classList.add("hidden");await loadDashboard()}catch(err){$("importMessage").textContent=err.message}});
 loadDashboard();
