@@ -1,0 +1,19 @@
+{
+  "name": "eas",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Equipment Accountability System for crew equipment checkout and return.",
+  "scripts": {
+    "dev": "wrangler dev --test-scheduled",
+    "types": "wrangler types",
+    "typecheck": "wrangler types && tsc --noEmit",
+    "check": "wrangler deploy --dry-run && npm run typecheck",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
+    "deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "wrangler": "^4.45.0"
+  }
+}
