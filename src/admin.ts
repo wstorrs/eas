@@ -4,143 +4,24 @@ type AdminContext = { email: string };
 type ImportEmployee = { employeeCode?: string; firstName?: string; lastName?: string };
 type CleanEmployee = { employeeCode: string; firstName: string; lastName: string };
 
-function json(data: unknown, init: ResponseInit = {}): Response {
-  const headers = new Headers(init.headers);
-  headers.set("content-type", "application/json; charset=utf-8");
-  headers.set("cache-control", "no-store");
-  return new Response(JSON.stringify(data), { ...init, headers });
-}
+function json(data: unknown, init: ResponseInit = {}): Response { const headers=new Headers(init.headers);headers.set("content-type","application/json; charset=utf-8");headers.set("cache-control","no-store");return new Response(JSON.stringify(data),{...init,headers}); }
+function fail(message:string,status=400):Response{return json({error:message},{status});}
 
-function fail(message: string, status = 400): Response {
-  return json({ error: message }, { status });
-}
+async function verifyAdmin(request:Request,env:Env):Promise<AdminContext|null>{if(!env.TEAM_DOMAIN||!env.POLICY_AUD)return null;const token=request.headers.get("cf-access-jwt-assertion");if(!token)return null;try{const jwks=createRemoteJWKSet(new URL(`${env.TEAM_DOMAIN}/cdn-cgi/access/certs`));const{payload}=await jwtVerify(token,jwks,{issuer:env.TEAM_DOMAIN,audience:env.POLICY_AUD});return typeof payload.email==="string"&&payload.email.length>0?{email:payload.email.slice(0,254)}:null}catch(cause){console.error(JSON.stringify({event:"admin_auth_failed",cause:String(cause)}));return null}}
+async function audit(env:Env,admin:AdminContext,action:string,entityType:string,entityId:string|null,details:unknown):Promise<void>{await env.DB.prepare("INSERT INTO admin_audit (id,admin_email,action,entity_type,entity_id,occurred_at,details_json) VALUES (?,?,?,?,?,?,?)").bind(crypto.randomUUID(),admin.email,action,entityType,entityId,new Date().toISOString(),JSON.stringify(details)).run();}
+function cleanEmployee(row:ImportEmployee):CleanEmployee|null{const raw=(row.employeeCode??"").trim();const code=/^\d{1,4}$/.test(raw)?raw.padStart(4,"0"):raw;const firstName=(row.firstName??"").trim(),lastName=(row.lastName??"").trim();if(!/^\d{4}$/.test(code)||!firstName||!lastName)return null;return{employeeCode:code,firstName,lastName};}
 
-async function verifyAdmin(request: Request, env: Env): Promise<AdminContext | null> {
-  if (!env.TEAM_DOMAIN || !env.POLICY_AUD) return null;
-  const token = request.headers.get("cf-access-jwt-assertion");
-  if (!token) return null;
+async function dashboard(env:Env,admin:AdminContext):Promise<Response>{const[employees,assets,signedOut,exceptions,current,transactions,vehicles]=await Promise.all([env.DB.prepare("SELECT COUNT(*) count FROM employees WHERE active=1").first<{count:number}>(),env.DB.prepare("SELECT COUNT(*) count FROM equipment WHERE active=1").first<{count:number}>(),env.DB.prepare("SELECT COUNT(*) count FROM equipment_state WHERE status='SIGNED_OUT'").first<{count:number}>(),env.DB.prepare("SELECT COUNT(*) count FROM equipment_state WHERE status IN ('DAMAGED','MISSING')").first<{count:number}>(),env.DB.prepare("SELECT e.asset_code,e.display_name,v.unit_number,p.employee_code,p.first_name||' '||p.last_name employee_name,s.updated_at signed_out_at FROM equipment_state s JOIN equipment e ON e.id=s.equipment_id LEFT JOIN vehicles v ON v.id=e.vehicle_id LEFT JOIN employees p ON p.id=s.employee_id WHERE s.status='SIGNED_OUT' ORDER BY s.updated_at").all(),env.DB.prepare("SELECT t.action,t.occurred_at,e.asset_code,v.unit_number,p.employee_code,p.first_name||' '||p.last_name employee_name FROM transactions t JOIN equipment e ON e.id=t.equipment_id LEFT JOIN vehicles v ON v.id=t.vehicle_id JOIN employees p ON p.id=t.employee_id ORDER BY t.occurred_at DESC LIMIT 50").all(),env.DB.prepare("SELECT id,unit_number FROM vehicles WHERE active=1 ORDER BY unit_number").all()]);return json({adminEmail:admin.email,counts:{employees:employees?.count??0,assets:assets?.count??0,signedOut:signedOut?.count??0,exceptions:exceptions?.count??0},current:current.results,transactions:transactions.results,vehicles:vehicles.results});}
 
-  try {
-    const jwks = createRemoteJWKSet(new URL(`${env.TEAM_DOMAIN}/cdn-cgi/access/certs`));
-    const { payload } = await jwtVerify(token, jwks, {
-      issuer: env.TEAM_DOMAIN,
-      audience: env.POLICY_AUD,
-    });
-    return typeof payload.email === "string" && payload.email.length > 0
-      ? { email: payload.email.slice(0, 254) }
-      : null;
-  } catch (cause) {
-    console.error(JSON.stringify({ event: "admin_auth_failed", cause: String(cause) }));
-    return null;
-  }
-}
+async function employeeList(env:Env):Promise<Response>{const rows=await env.DB.prepare(`SELECT e.id,e.employee_code,e.first_name,e.last_name,e.active,COUNT(t.id) transaction_count FROM employees e LEFT JOIN transactions t ON t.employee_id=e.id GROUP BY e.id ORDER BY e.last_name,e.first_name`).all();return json({employees:rows.results});}
+async function addEmployee(request:Request,env:Env,admin:AdminContext):Promise<Response>{const employee=cleanEmployee(await request.json<ImportEmployee>());if(!employee)return fail("Enter a valid employee ID, first name, and last name.");try{const result=await env.DB.prepare("INSERT INTO employees (employee_code,first_name,last_name) VALUES (?,?,?)").bind(employee.employeeCode,employee.firstName,employee.lastName).run();await audit(env,admin,"CREATE","EMPLOYEE",String(result.meta.last_row_id),employee);return json({ok:true,employeeCode:employee.employeeCode},{status:201});}catch{return fail("Employee ID already exists or could not be added.",409);}}
+async function setEmployeeActive(env:Env,admin:AdminContext,id:number,active:boolean):Promise<Response>{const employee=await env.DB.prepare("SELECT employee_code,first_name,last_name FROM employees WHERE id=?").bind(id).first<{employee_code:string;first_name:string;last_name:string}>();if(!employee)return fail("Employee not found.",404);await env.DB.prepare("UPDATE employees SET active=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(active?1:0,id).run();await audit(env,admin,active?"REACTIVATE":"DEACTIVATE","EMPLOYEE",String(id),employee);return json({ok:true});}
+async function deleteEmployee(env:Env,admin:AdminContext,id:number):Promise<Response>{const employee=await env.DB.prepare("SELECT employee_code,first_name,last_name FROM employees WHERE id=?").bind(id).first<{employee_code:string;first_name:string;last_name:string}>();if(!employee)return fail("Employee not found.",404);const history=await env.DB.prepare("SELECT COUNT(*) count FROM transactions WHERE employee_id=?").bind(id).first<{count:number}>();const held=await env.DB.prepare("SELECT COUNT(*) count FROM equipment_state WHERE employee_id=?").bind(id).first<{count:number}>();if((history?.count??0)>0||(held?.count??0)>0)return fail("This employee has equipment history or is tied to current equipment. Deactivate instead of deleting.",409);await env.DB.prepare("DELETE FROM employees WHERE id=?").bind(id).run();await audit(env,admin,"DELETE","EMPLOYEE",String(id),employee);return json({ok:true});}
 
-async function audit(env: Env, admin: AdminContext, action: string, entityType: string, entityId: string | null, details: unknown): Promise<void> {
-  await env.DB.prepare(`INSERT INTO admin_audit (id,admin_email,action,entity_type,entity_id,occurred_at,details_json) VALUES (?,?,?,?,?,?,?)`)
-    .bind(crypto.randomUUID(), admin.email, action, entityType, entityId, new Date().toISOString(), JSON.stringify(details)).run();
-}
+async function previewEmployees(request:Request,env:Env):Promise<Response>{const body=await request.json<{employees?:ImportEmployee[]}>();const rows=Array.isArray(body.employees)?body.employees.slice(0,1000):[];const seen=new Set<string>();const preview:Array<Record<string,unknown>>=[];for(const original of rows){const employee=cleanEmployee(original);if(!employee){preview.push({...original,status:"INVALID",reason:"Employee ID must be numeric and names are required."});continue}if(seen.has(employee.employeeCode)){preview.push({...employee,status:"INVALID",reason:"Duplicate employee ID in import file."});continue}seen.add(employee.employeeCode);const existing=await env.DB.prepare("SELECT first_name,last_name,active FROM employees WHERE employee_code=?").bind(employee.employeeCode).first<{first_name:string;last_name:string;active:number}>();if(!existing)preview.push({...employee,status:"NEW"});else if(existing.first_name.toLowerCase()===employee.firstName.toLowerCase()&&existing.last_name.toLowerCase()===employee.lastName.toLowerCase())preview.push({...employee,status:"EXISTS",existingName:`${existing.first_name} ${existing.last_name}`});else preview.push({...employee,status:"CONFLICT",existingName:`${existing.first_name} ${existing.last_name}`});}return json({preview,counts:preview.reduce((a,r)=>{const key=String(r.status).toLowerCase();a[key]=(a[key]||0)+1;return a;},{} as Record<string,number>)});}
+async function importEmployees(request:Request,env:Env,admin:AdminContext):Promise<Response>{const body=await request.json<{employees?:ImportEmployee[]}>();const rows=Array.isArray(body.employees)?body.employees.slice(0,1000):[];const unique=new Map<string,CleanEmployee>();for(const row of rows){const employee=cleanEmployee(row);if(employee&&!unique.has(employee.employeeCode))unique.set(employee.employeeCode,employee);}let inserted=0,skipped=0;const pending:D1PreparedStatement[]=[];for(const employee of unique.values()){const existing=await env.DB.prepare("SELECT id FROM employees WHERE employee_code=?").bind(employee.employeeCode).first<{id:number}>();if(existing){skipped++;continue}pending.push(env.DB.prepare("INSERT INTO employees (employee_code,first_name,last_name) VALUES (?,?,?)").bind(employee.employeeCode,employee.firstName,employee.lastName));}for(let i=0;i<pending.length;i+=50){await env.DB.batch(pending.slice(i,i+50));inserted+=Math.min(50,pending.length-i);}await audit(env,admin,"IMPORT","EMPLOYEE",null,{inserted,skipped,submitted:rows.length});return json({ok:true,inserted,skipped});}
 
-function cleanEmployee(row: ImportEmployee): CleanEmployee | null {
-  const raw = (row.employeeCode ?? "").trim();
-  const code = /^\d{1,4}$/.test(raw) ? raw.padStart(4, "0") : raw;
-  const firstName = (row.firstName ?? "").trim();
-  const lastName = (row.lastName ?? "").trim();
-  if (!/^\d{4}$/.test(code) || !firstName || !lastName) return null;
-  return { employeeCode: code, firstName, lastName };
-}
+async function addVehicle(request:Request,env:Env,admin:AdminContext):Promise<Response>{const body=await request.json<{unitNumber?:string;description?:string}>();const unit=(body.unitNumber??"").trim(),description=(body.description??"").trim();if(!unit)return fail("Unit number is required.");try{const result=await env.DB.prepare("INSERT INTO vehicles (unit_number,description) VALUES (?,?)").bind(unit,description||null).run();await audit(env,admin,"CREATE","VEHICLE",String(result.meta.last_row_id),{unitNumber:unit,description});return json({ok:true},{status:201});}catch{return fail("Unit number already exists or could not be added.",409);}}
+async function addEquipment(request:Request,env:Env,admin:AdminContext):Promise<Response>{const body=await request.json<{assetCode?:string;assetType?:string;displayName?:string;vehicleId?:string|null}>();const code=(body.assetCode??"").trim().toUpperCase(),type=(body.assetType??"").trim(),name=(body.displayName??"").trim();if(!/^[A-Z0-9_-]{2,30}$/.test(code)||!["VEHICLE_KEY","IPAD","PORTABLE_RADIO"].includes(type)||!name)return fail("Valid asset code, equipment type, and display name are required.");const vehicleId=body.vehicleId?Number(body.vehicleId):null;if(body.vehicleId&&!Number.isInteger(vehicleId))return fail("Invalid vehicle.");try{const insert=await env.DB.prepare("INSERT INTO equipment (asset_code,qr_code,asset_type,display_name,vehicle_id) VALUES (?,?,?,?,?)").bind(code,`EAS:${code}`,type,name,vehicleId).run();const id=Number(insert.meta.last_row_id);await env.DB.prepare("INSERT INTO equipment_state (equipment_id,status,updated_at) VALUES (?,'AVAILABLE',CURRENT_TIMESTAMP)").bind(id).run();await audit(env,admin,"CREATE","EQUIPMENT",String(id),{assetCode:code,assetType:type,displayName:name,vehicleId});return json({ok:true,qrCode:`EAS:${code}`},{status:201});}catch{return fail("Asset code/QR already exists or equipment could not be added.",409);}}
 
-async function dashboard(env: Env, admin: AdminContext): Promise<Response> {
-  const [employees, assets, signedOut, exceptions, current, transactions, vehicles] = await Promise.all([
-    env.DB.prepare("SELECT COUNT(*) count FROM employees WHERE active=1").first<{count:number}>(),
-    env.DB.prepare("SELECT COUNT(*) count FROM equipment WHERE active=1").first<{count:number}>(),
-    env.DB.prepare("SELECT COUNT(*) count FROM equipment_state WHERE status='SIGNED_OUT'").first<{count:number}>(),
-    env.DB.prepare("SELECT COUNT(*) count FROM equipment_state WHERE status IN ('DAMAGED','MISSING')").first<{count:number}>(),
-    env.DB.prepare(`SELECT e.asset_code,e.display_name,v.unit_number,p.employee_code,p.first_name||' '||p.last_name employee_name,s.updated_at signed_out_at FROM equipment_state s JOIN equipment e ON e.id=s.equipment_id LEFT JOIN vehicles v ON v.id=e.vehicle_id LEFT JOIN employees p ON p.id=s.employee_id WHERE s.status='SIGNED_OUT' ORDER BY s.updated_at`).all(),
-    env.DB.prepare(`SELECT t.action,t.occurred_at,e.asset_code,v.unit_number,p.employee_code,p.first_name||' '||p.last_name employee_name FROM transactions t JOIN equipment e ON e.id=t.equipment_id LEFT JOIN vehicles v ON v.id=t.vehicle_id JOIN employees p ON p.id=t.employee_id ORDER BY t.occurred_at DESC LIMIT 50`).all(),
-    env.DB.prepare("SELECT id,unit_number FROM vehicles WHERE active=1 ORDER BY unit_number").all(),
-  ]);
-  return json({adminEmail:admin.email,counts:{employees:employees?.count??0,assets:assets?.count??0,signedOut:signedOut?.count??0,exceptions:exceptions?.count??0},current:current.results,transactions:transactions.results,vehicles:vehicles.results});
-}
-
-async function addEmployee(request: Request, env: Env, admin: AdminContext): Promise<Response> {
-  const body = await request.json<ImportEmployee>();
-  const employee = cleanEmployee(body);
-  if (!employee) return fail("Enter a valid employee ID, first name, and last name.");
-  try {
-    const result = await env.DB.prepare("INSERT INTO employees (employee_code,first_name,last_name) VALUES (?,?,?)").bind(employee.employeeCode,employee.firstName,employee.lastName).run();
-    await audit(env,admin,"CREATE","EMPLOYEE",String(result.meta.last_row_id),employee);
-    return json({ok:true,employeeCode:employee.employeeCode},{status:201});
-  } catch { return fail("Employee ID already exists or could not be added.",409); }
-}
-
-async function previewEmployees(request: Request, env: Env): Promise<Response> {
-  const body = await request.json<{ employees?: ImportEmployee[] }>();
-  const rows = Array.isArray(body.employees) ? body.employees.slice(0,1000) : [];
-  const seen = new Set<string>();
-  const preview: Array<Record<string,unknown>> = [];
-
-  for (const original of rows) {
-    const employee = cleanEmployee(original);
-    if (!employee) {
-      preview.push({ ...original, status:"INVALID", reason:"Employee ID must be numeric and names are required." });
-      continue;
-    }
-    if (seen.has(employee.employeeCode)) {
-      preview.push({ ...employee, status:"INVALID", reason:"Duplicate employee ID in import file." });
-      continue;
-    }
-    seen.add(employee.employeeCode);
-    const existing = await env.DB.prepare("SELECT first_name,last_name,active FROM employees WHERE employee_code=?").bind(employee.employeeCode).first<{first_name:string;last_name:string;active:number}>();
-    if (!existing) preview.push({ ...employee, status:"NEW" });
-    else if (existing.first_name.toLowerCase()===employee.firstName.toLowerCase() && existing.last_name.toLowerCase()===employee.lastName.toLowerCase()) preview.push({ ...employee, status:"EXISTS", existingName:`${existing.first_name} ${existing.last_name}` });
-    else preview.push({ ...employee, status:"CONFLICT", existingName:`${existing.first_name} ${existing.last_name}` });
-  }
-
-  return json({ preview, counts: preview.reduce((a,r)=>{const key=String(r.status).toLowerCase();a[key]=(a[key]||0)+1;return a;},{} as Record<string,number>) });
-}
-
-async function importEmployees(request: Request, env: Env, admin: AdminContext): Promise<Response> {
-  const body = await request.json<{ employees?: ImportEmployee[] }>();
-  const rows = Array.isArray(body.employees) ? body.employees.slice(0,1000) : [];
-  const unique = new Map<string,CleanEmployee>();
-  for (const row of rows) { const employee=cleanEmployee(row); if(employee && !unique.has(employee.employeeCode)) unique.set(employee.employeeCode,employee); }
-
-  let inserted=0, skipped=0;
-  const pending: D1PreparedStatement[] = [];
-  for (const employee of unique.values()) {
-    const existing = await env.DB.prepare("SELECT id FROM employees WHERE employee_code=?").bind(employee.employeeCode).first<{id:number}>();
-    if (existing) { skipped++; continue; }
-    pending.push(env.DB.prepare("INSERT INTO employees (employee_code,first_name,last_name) VALUES (?,?,?)").bind(employee.employeeCode,employee.firstName,employee.lastName));
-  }
-  for (let i=0;i<pending.length;i+=50) { await env.DB.batch(pending.slice(i,i+50)); inserted += Math.min(50,pending.length-i); }
-  await audit(env,admin,"IMPORT","EMPLOYEE",null,{inserted,skipped,submitted:rows.length});
-  return json({ok:true,inserted,skipped});
-}
-
-async function addVehicle(request: Request, env: Env, admin: AdminContext): Promise<Response> {
-  const body=await request.json<{unitNumber?:string;description?:string}>(); const unit=(body.unitNumber??"").trim(),description=(body.description??"").trim();
-  if(!unit)return fail("Unit number is required.");
-  try{const result=await env.DB.prepare("INSERT INTO vehicles (unit_number,description) VALUES (?,?)").bind(unit,description||null).run();await audit(env,admin,"CREATE","VEHICLE",String(result.meta.last_row_id),{unitNumber:unit,description});return json({ok:true},{status:201});}catch{return fail("Unit number already exists or could not be added.",409);}
-}
-
-async function addEquipment(request: Request, env: Env, admin: AdminContext): Promise<Response> {
-  const body=await request.json<{assetCode?:string;assetType?:string;displayName?:string;vehicleId?:string|null}>();
-  const code=(body.assetCode??"").trim().toUpperCase(),type=(body.assetType??"").trim(),name=(body.displayName??"").trim();
-  if(!/^[A-Z0-9_-]{2,30}$/.test(code)||!["VEHICLE_KEY","IPAD","PORTABLE_RADIO"].includes(type)||!name)return fail("Valid asset code, equipment type, and display name are required.");
-  const vehicleId=body.vehicleId?Number(body.vehicleId):null;if(body.vehicleId&&!Number.isInteger(vehicleId))return fail("Invalid vehicle.");
-  try{const insert=await env.DB.prepare("INSERT INTO equipment (asset_code,qr_code,asset_type,display_name,vehicle_id) VALUES (?,?,?,?,?)").bind(code,`EAS:${code}`,type,name,vehicleId).run();const id=Number(insert.meta.last_row_id);await env.DB.prepare("INSERT INTO equipment_state (equipment_id,status,updated_at) VALUES (?,'AVAILABLE',CURRENT_TIMESTAMP)").bind(id).run();await audit(env,admin,"CREATE","EQUIPMENT",String(id),{assetCode:code,assetType:type,displayName:name,vehicleId});return json({ok:true,qrCode:`EAS:${code}`},{status:201});}catch{return fail("Asset code/QR already exists or equipment could not be added.",409);}
-}
-
-export async function handleAdmin(request: Request, env: Env): Promise<Response> {
-  const admin=await verifyAdmin(request,env); if(!admin)return fail("Admin access requires Cloudflare Access authentication.",401);
-  const path=new URL(request.url).pathname;
-  try{
-    if(path==="/api/admin/dashboard"&&request.method==="GET")return dashboard(env,admin);
-    if(path==="/api/admin/employees"&&request.method==="POST")return addEmployee(request,env,admin);
-    if(path==="/api/admin/employees/preview"&&request.method==="POST")return previewEmployees(request,env);
-    if(path==="/api/admin/employees/import"&&request.method==="POST")return importEmployees(request,env,admin);
-    if(path==="/api/admin/vehicles"&&request.method==="POST")return addVehicle(request,env,admin);
-    if(path==="/api/admin/equipment"&&request.method==="POST")return addEquipment(request,env,admin);
-    return fail("Not found.",404);
-  }catch(cause){console.error(JSON.stringify({event:"admin_error",path,cause:String(cause),admin:admin.email}));return fail("Unexpected admin error.",500);}
-}
+export async function handleAdmin(request:Request,env:Env):Promise<Response>{const admin=await verifyAdmin(request,env);if(!admin)return fail("Admin access requires Cloudflare Access authentication.",401);const path=new URL(request.url).pathname;try{if(path==="/api/admin/dashboard"&&request.method==="GET")return dashboard(env,admin);if(path==="/api/admin/employees"&&request.method==="GET")return employeeList(env);if(path==="/api/admin/employees"&&request.method==="POST")return addEmployee(request,env,admin);if(path==="/api/admin/employees/preview"&&request.method==="POST")return previewEmployees(request,env);if(path==="/api/admin/employees/import"&&request.method==="POST")return importEmployees(request,env,admin);const match=path.match(/^\/api\/admin\/employees\/(\d+)$/);if(match){const id=Number(match[1]);if(request.method==="DELETE")return deleteEmployee(env,admin,id);if(request.method==="PATCH"){const body=await request.json<{active?:boolean}>();if(typeof body.active!=="boolean")return fail("Active status is required.");return setEmployeeActive(env,admin,id,body.active);}}if(path==="/api/admin/vehicles"&&request.method==="POST")return addVehicle(request,env,admin);if(path==="/api/admin/equipment"&&request.method==="POST")return addEquipment(request,env,admin);return fail("Not found.",404);}catch(cause){console.error(JSON.stringify({event:"admin_error",path,cause:String(cause),admin:admin.email}));return fail("Unexpected admin error.",500);}}
