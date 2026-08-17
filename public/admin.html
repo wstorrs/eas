@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>EAS Admin</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .admin-grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}.stat{font-size:2rem;font-weight:800}.toolbar{display:flex;gap:.75rem;flex-wrap:wrap;align-items:end}.toolbar label{flex:1;min-width:160px}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:.7rem;border-bottom:1px solid #d9e2ec;white-space:nowrap}th{font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}.muted{color:#627d98}.danger{color:#b42318}.admin-section{margin-top:1rem}
+  </style>
+</head>
+<body>
+<main class="shell">
+  <header class="hero"><p class="eyebrow">Equipment Accountability System</p><h1>Admin Dashboard</h1><p id="adminIdentity">Protected by Cloudflare Access</p></header>
+  <section class="panel"><div class="admin-grid"><div><div class="muted">Active employees</div><div class="stat" id="employeeCount">-</div></div><div><div class="muted">Active assets</div><div class="stat" id="assetCount">-</div></div><div><div class="muted">Signed out</div><div class="stat" id="signedOutCount">-</div></div><div><div class="muted">Exceptions</div><div class="stat" id="exceptionCount">-</div></div></div></section>
+
+  <section class="panel admin-section"><h2>Add Employee</h2><form id="employeeForm" class="toolbar"><label>4-digit ID<input id="employeeCode" inputmode="numeric" maxlength="4" required></label><label>First name<input id="firstName" required></label><label>Last name<input id="lastName" required></label><button type="submit">Add Employee</button></form><p id="employeeMessage" class="muted"></p></section>
+
+  <section class="panel admin-section"><h2>Add Vehicle</h2><form id="vehicleForm" class="toolbar"><label>Unit number<input id="unitNumber" required></label><label>Description<input id="vehicleDescription"></label><button type="submit">Add Vehicle</button></form><p id="vehicleMessage" class="muted"></p></section>
+
+  <section class="panel admin-section"><h2>Add Equipment</h2><form id="equipmentForm" class="toolbar"><label>Asset code<input id="assetCode" required></label><label>Type<select id="assetType"><option value="VEHICLE_KEY">Vehicle Key</option><option value="IPAD">iPad</option><option value="PORTABLE_RADIO">Portable Radio</option></select></label><label>Display name<input id="displayName" required></label><label>Vehicle<select id="vehicleId"><option value="">Unassigned</option></select></label><button type="submit">Add Equipment</button></form><p id="equipmentMessage" class="muted"></p></section>
+
+  <section class="panel admin-section"><h2>Currently Signed Out</h2><div class="table-wrap"><table><thead><tr><th>Asset</th><th>Unit</th><th>Employee</th><th>Since</th></tr></thead><tbody id="currentRows"></tbody></table></div></section>
+  <section class="panel admin-section"><h2>Recent Transactions</h2><div class="table-wrap"><table><thead><tr><th>Time</th><th>Action</th><th>Asset</th><th>Unit</th><th>Employee</th></tr></thead><tbody id="transactionRows"></tbody></table></div></section>
+</main>
+<script src="/admin.js" defer></script>
+</body>
+</html>
