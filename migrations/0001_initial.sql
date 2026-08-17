@@ -89,10 +89,3 @@ CREATE INDEX idx_transactions_occurred_at ON transactions(occurred_at);
 CREATE INDEX idx_transactions_equipment ON transactions(equipment_id, occurred_at);
 CREATE INDEX idx_equipment_vehicle ON equipment(vehicle_id);
 CREATE INDEX idx_equipment_state_status ON equipment_state(status);
-
-CREATE TRIGGER equipment_create_state
-AFTER INSERT ON equipment
-BEGIN
-  INSERT INTO equipment_state (equipment_id, status, updated_at)
-  VALUES (NEW.id, 'AVAILABLE', CURRENT_TIMESTAMP);
-END;
