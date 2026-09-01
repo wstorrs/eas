@@ -40,4 +40,4 @@ Wrangler is configured for a D1 binding named `DB`. Report snapshots are generat
 
 ## Production security
 
-The Phase 1 kiosk API should not be exposed openly to the public Internet. Before production, restrict it to approved access or add a Cloudflare access-control layer. The 4-digit employee number identifies the employee; it is not treated as a secret authentication factor.
+The kiosk page and its transaction APIs enforce an exact source-IP allowlist using the private runtime setting `KIOSK_ALLOWED_IP`. Administrative routes remain protected separately by Cloudflare Access. The 4-digit employee number identifies the employee; it is not treated as a secret authentication factor.
