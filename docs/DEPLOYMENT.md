@@ -57,11 +57,12 @@ Before production use:
 
 1. Verify D1 migrations against the staging database.
 2. Verify employee lookup, sign-out, and return using fictional records.
-3. Add access control for administrative routes and deployment administration.
+3. Protect administrative routes with Cloudflare Access. Store the approved base public IP privately with `npx wrangler secret put KIOSK_ALLOWED_IP` (enter the IPv4 address without `/32`). The kiosk page and transaction APIs fail closed when this setting is absent or the source IP does not match.
 4. Onboard the sending domain in Cloudflare Email Service and allow Cloudflare to add the required authentication DNS records.
 5. Add and verify the report destination address in Cloudflare Email Service.
 6. Store the sender and recipient privately with `npx wrangler secret put REPORT_FROM` and `npx wrangler secret put REPORT_TO`; do not commit either address.
-7. Apply all migrations, trigger a staging report, and confirm the admin Report Audit changes from `PENDING` to `SENT`.
-8. Import the real employee roster directly into D1, not GitHub.
-9. Replace development equipment/vehicle records with the approved fleet inventory.
-10. Confirm QR labels and manual asset codes against physical equipment.
+7. Test the kiosk from both the approved base network and an outside connection. Confirm the base succeeds and the outside connection receives HTTP 403.
+8. Apply all migrations, trigger a staging report, and confirm the admin Report Audit changes from `PENDING` to `SENT`.
+9. Import the real employee roster directly into D1, not GitHub.
+10. Replace development equipment/vehicle records with the approved fleet inventory.
+11. Confirm QR labels and manual asset codes against physical equipment.
