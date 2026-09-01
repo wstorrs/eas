@@ -45,7 +45,7 @@ The migration set currently includes fictional development data. Do not replace 
 
 ## Scheduled reports
 
-The Worker runs an hourly Cron Trigger and generates accountability snapshots when the local Eastern hour is Noon or 8 PM. This keeps the schedule aligned with `America/New_York` across daylight-saving changes. Email delivery is intentionally not configured yet.
+The Worker runs an hourly Cron Trigger and generates accountability snapshots when the local Eastern hour is Noon or 8 PM. This keeps the schedule aligned with `America/New_York` across daylight-saving changes. Email delivery uses the Worker `EMAIL` send binding. The sender and recipient are stored privately as Cloudflare runtime secrets named `REPORT_FROM` and `REPORT_TO`.
 
 ## Retention
 
@@ -58,8 +58,10 @@ Before production use:
 1. Verify D1 migrations against the staging database.
 2. Verify employee lookup, sign-out, and return using fictional records.
 3. Add access control for administrative routes and deployment administration.
-4. Select and configure the outbound email provider.
-5. Configure report recipients.
-6. Import the real employee roster directly into D1, not GitHub.
-7. Replace development equipment/vehicle records with the approved fleet inventory.
-8. Confirm QR labels and manual asset codes against physical equipment.
+4. Onboard the sending domain in Cloudflare Email Service and allow Cloudflare to add the required authentication DNS records.
+5. Add and verify the report destination address in Cloudflare Email Service.
+6. Store the sender and recipient privately with `npx wrangler secret put REPORT_FROM` and `npx wrangler secret put REPORT_TO`; do not commit either address.
+7. Apply all migrations, trigger a staging report, and confirm the admin Report Audit changes from `PENDING` to `SENT`.
+8. Import the real employee roster directly into D1, not GitHub.
+9. Replace development equipment/vehicle records with the approved fleet inventory.
+10. Confirm QR labels and manual asset codes against physical equipment.

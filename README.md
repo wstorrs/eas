@@ -10,7 +10,7 @@ EAS is a Cloudflare Workers application for crew equipment checkout and return. 
 - Sign-out and return workflows
 - Immutable transaction history plus current equipment state
 - Current signed-out equipment API
-- Noon and 8 PM Eastern report snapshots
+- Noon and 8 PM Eastern report snapshots with outbound email delivery and an admin delivery audit
 - 180-day default retention with transaction holds
 - Cloudflare Workers Static Assets + D1
 
@@ -34,7 +34,7 @@ npm run types
 npm run deploy
 ```
 
-Wrangler is configured for a D1 binding named `DB`. Report snapshots are generated at noon and 8 PM in `America/New_York`. Email delivery is intentionally left `NOT_CONFIGURED` until the email provider and recipient list are selected.
+Wrangler is configured for a D1 binding named `DB`. Report snapshots are generated at noon and 8 PM in `America/New_York`. Email delivery uses Cloudflare Email Service. The sender and recipient are private runtime settings (`REPORT_FROM` and `REPORT_TO`) and are intentionally excluded from this public repository.
 
 `RETENTION_DAYS` defaults to `180`; active retention holds and transactions backing current equipment state are excluded from automatic deletion.
 
